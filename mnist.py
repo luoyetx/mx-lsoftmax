@@ -46,7 +46,7 @@ def get_symbol():
 
 
 def train():
-    dev = mx.gpu(args.gpu) if args.gpu >=0 else mx.cpu()
+    ctx = mx.gpu(args.gpu) if args.gpu >=0 else mx.cpu()
     train = mx.io.MNISTIter(
                 image='data/train-images-idx3-ubyte',
                 label='data/train-labels-idx1-ubyte',
@@ -63,11 +63,11 @@ def train():
                 scale=1./128,
                 batch_size=args.batch_size)
     symbol = get_symbol()
-    model = mx.mod.Module(
-                symbol=symbol,
-                context=dev,
-                data_names=('data',),
-                label_names=('softmax_label',))
+    mod = mx.mod.Module(
+            symbol=symbol,
+            context=ctx,
+            data_names=('data',),
+            label_names=('softmax_label',))
     num_examples = 60000
     epoch_size = int(num_examples / args.batch_size)
     optim_params = {
@@ -76,19 +76,19 @@ def train():
         'wd': 0.0005,
         'lr_scheduler': mx.lr_scheduler.FactorScheduler(step=10*epoch_size, factor=0.1),
     }
-    model.fit(train_data=train,
-              eval_data=val,
-              eval_metric=mx.metric.Accuracy(),
-              initializer=mx.init.Xavier(),
-              optimizer='sgd',
-              optimizer_params=optim_params,
-              num_epoch=args.num_epoch,
-              batch_end_callback=mx.callback.Speedometer(args.batch_size, 50),
-              epoch_end_callback=mx.callback.do_checkpoint(args.model_prefix))
+    mod.fit(train_data=train,
+            eval_data=val,
+            eval_metric=mx.metric.Accuracy(),
+            initializer=mx.init.Xavier(),
+            optimizer='sgd',
+            optimizer_params=optim_params,
+            num_epoch=args.num_epoch,
+            batch_end_callback=mx.callback.Speedometer(args.batch_size, 50),
+            epoch_end_callback=mx.callback.do_checkpoint(args.model_prefix))
 
 
 def test():
-    dev = mx.gpu(args.gpu) if args.gpu >=0 else mx.cpu()
+    ctx = mx.gpu(args.gpu) if args.gpu >=0 else mx.cpu()
     val = mx.io.MNISTIter(
             image='data/t10k-images-idx3-ubyte',
             label='data/t10k-labels-idx1-ubyte',
@@ -96,15 +96,19 @@ def test():
             mean_r=128,
             scale=1./128,
             batch_size=1)
-    model = mx.model.FeedForward.load(args.model_prefix, args.num_epoch, ctx=dev)
-    embedding = model.symbol.get_internals()['embedding_output']
-    model = mx.model.FeedForward(ctx=dev, symbol=embedding, arg_params=model.arg_params,
-                aux_params=model.aux_params, allow_extra_params=True, batch_size=1)
+    symbol, arg_params, aux_params = mx.model.load_checkpoint(args.model_prefix, args.num_epoch)
+    embedding = symbol.get_internals()['embedding_output']
+    mod = mx.mod.Module(
+            symbol=embedding,
+            context=ctx,
+            data_names=('data',))
+    mod.bind(data_shapes=[('data', (1, 1, 28, 28))], for_training=False)
+    mod.init_params(arg_params=arg_params, aux_params=aux_params)
+
     embeds = []
     labels = []
-    for batch in val:
-        preds = model.predict(batch.data[0])
-        embeds.append(preds[0])
+    for preds, i_batch, batch in mod.iter_predict(val):
+        embeds.append(preds[0].asnumpy())
         labels.append(batch.label[0].asnumpy())
     embeds = np.vstack(embeds)
     labels = np.hstack(labels)
@@ -131,7 +135,10 @@ def test():
             PathEffects.Stroke(linewidth=5, foreground="w"),
             PathEffects.Normal()])
         txts.append(txt)
-    plt.savefig('mnist.jpg')
+
+    margin = args.margin if not args.no_lsoftmax else 1
+    fname = 'mnist-lsoftmax-margin-%d.png'%margin
+    plt.savefig(fname)
 
 
 if __name__ == '__main__':

@@ -71,7 +71,7 @@ class LSoftmaxOp : public Operator {
     CHECK_EQ(req.size(), 3);
     CHECK_EQ(req[lsoftmax_enum::kOut], kWriteTo);
     CHECK_EQ(req[lsoftmax_enum::kDataNorm], kWriteTo);
-    CHECK_EQ(req[lsoftmax_enum::kDataNorm], kWriteTo);
+    CHECK_EQ(req[lsoftmax_enum::kWeightNorm], kWriteTo);
     Stream<xpu> *s = ctx.get_stream<xpu>();
     const int n = in_data[lsoftmax_enum::kData].size(0);
     const int m = in_data[lsoftmax_enum::kWeight].size(0);
@@ -81,6 +81,10 @@ class LSoftmaxOp : public Operator {
     Tensor<xpu, 2, DType> out = out_data[lsoftmax_enum::kOut].FlatTo2D<xpu, DType>(s);
     Tensor<xpu, 1, DType> x_norm = out_data[lsoftmax_enum::kDataNorm].get_with_shape<xpu, 1, DType>(Shape1(n), s);
     Tensor<xpu, 1, DType> w_norm = out_data[lsoftmax_enum::kWeightNorm].get_with_shape<xpu, 1, DType>(Shape1(m), s);
+#if defined(__CUDACC__)
+    CHECK_EQ(s->blas_handle_ownership_, Stream<xpu>::OwnHandle)
+        << "Must init CuBLAS handle in stream";
+#endif
     // original fully connected
     out = dot(x, w.T());
     // large margin fully connected
@@ -130,6 +134,10 @@ class LSoftmaxOp : public Operator {
     Tensor<xpu, 2, DType> w_grad = in_grad[lsoftmax_enum::kWeight].FlatTo2D<xpu, DType>(s);
     // workspace is used for cos_t, cos_mt, k, sin2_t and fo for every data point
     Tensor<xpu, 2, DType> workspace = ctx.requested[lsoftmax_enum::kTempSpace].get_space_typed<xpu, 2, DType>(Shape2(5, n), s);
+#if defined(__CUDACC__)
+    CHECK_EQ(s->blas_handle_ownership_, Stream<xpu>::OwnHandle)
+        << "Must init CuBLAS handle in stream";
+#endif
     // original fully connected
     x_grad = dot(o_grad, w);
     w_grad = dot(o_grad.T(), x);

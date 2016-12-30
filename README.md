@@ -28,19 +28,19 @@ I implement the operator both in Python and C++(CUDA). The performance below is 
 
 ### original softmax (traditional fully connected)
 
-![lsoftmax-margin-1](imgs/mnist-lsoftmax-margin-1.jpg)
+![lsoftmax-margin-1](imgs/mnist-lsoftmax-margin-1.png)
 
 ### lsoftmax with margin = 2 and lambda = 1
 
-![lsoftmax-margin-2](imgs/mnist-lsoftmax-margin-2.jpg)
+![lsoftmax-margin-2](imgs/mnist-lsoftmax-margin-2.png)
 
 ### lsoftmax with margin = 3 and lambda = 1
 
-![lsoftmax-margin-3](imgs/mnist-lsoftmax-margin-3.jpg)
+![lsoftmax-margin-3](imgs/mnist-lsoftmax-margin-3.png)
 
 ### lsoftmax with margin = 4 and lambda = 1
 
-![lsoftmax-margin-4](imgs/mnist-lsoftmax-margin-4.jpg)
+![lsoftmax-margin-4](imgs/mnist-lsoftmax-margin-4.png)
 
 ## References
 

@@ -1,4 +1,6 @@
 data
 model
 
-mnist.jpg
+*.pyc
+*.jpg
+*.png
