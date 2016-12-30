@@ -32,9 +32,13 @@ def get_symbol():
     relu3 = mx.sym.Activation(data=fc3, act_type='relu')
 
     embedding = mx.sym.FullyConnected(data=relu3, num_hidden=2, name='embedding')
-    if args.lsoftmax:
-        fc4 = mx.sym.Custom(data=embedding, label=label, num_hidden=10,
-                            beta=args.beta, margin=args.margin, op_type='LSoftmax')
+    if not args.no_lsoftmax:
+        if args.op_impl == 'cpp':
+            fc4 = mx.sym.LSoftmax(data=embedding, label=label, num_hidden=10,
+                                  beta=args.beta, margin=args.margin)
+        else:
+            fc4 = mx.sym.Custom(data=embedding, label=label, num_hidden=10,
+                                beta=args.beta, margin=args.margin, op_type='LSoftmax')
     else:
         fc4 = mx.sym.FullyConnected(data=embedding, num_hidden=10, no_bias=True)
     softmax_loss = mx.sym.SoftmaxOutput(data=fc4, label=label)
@@ -89,6 +93,8 @@ def test():
             image='data/t10k-images-idx3-ubyte',
             label='data/t10k-labels-idx1-ubyte',
             input_shape=(1, 28, 28),
+            mean_r=128,
+            scale=1./128,
             batch_size=1)
     model = mx.model.FeedForward.load(args.model_prefix, args.num_epoch, ctx=dev)
     embedding = model.symbol.get_internals()['embedding_output']
@@ -136,12 +142,17 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=128, help="batch size")
     parser.add_argument('--train', action='store_true', help="train mnist")
     parser.add_argument('--test', action='store_true', help="test mnist and plot")
-    parser.add_argument('--lsoftmax', action='store_true', help="use lsoftmax layer")
+    parser.add_argument('--no-lsoftmax', action='store_true', help="don't use lsoftmax layer")
     parser.add_argument('--margin', type=int, default=2, help="lsoftmax margin")
     parser.add_argument('--model-prefix', type=str, default='model/mnist', help="model predix")
     parser.add_argument('--num-epoch', type=int, default=20, help="number of epoches to train")
+    parser.add_argument('--op-impl', type=str, choices=['py', 'cpp'], default='py', help="operator implementation")
     args = parser.parse_args()
     print args
+
+    # check
+    if args.op_impl == 'cpp' and args.gpu < 0:
+        raise ValueError("LSoftmax in C++ currently only supports GPU")
 
     if args.train:
         train()

@@ -37,11 +37,11 @@ class LSoftmaxOp(mx.operator.CustomOp):
         '''calculate cos(m*theta)
         '''
         cos_mt = 0
-        sin_t_2 = 1 - cos_t * cos_t
+        sin2_t = 1 - cos_t * cos_t
         flag = -1
         for p in range(self.margin / 2 + 1):
             flag *= -1
-            cos_mt += flag * self.c_map[2*p] * pow(cos_t, self.margin-2*p) * pow(sin_t_2, p)
+            cos_mt += flag * self.c_map[2*p] * pow(cos_t, self.margin-2*p) * pow(sin2_t, p)
         return cos_mt
 
     def forward(self, is_train, req, in_data, out_data, aux):
@@ -60,7 +60,7 @@ class LSoftmaxOp(mx.operator.CustomOp):
         x_norm = np.linalg.norm(x, axis=1)
         for i in range(n):
             j = yi = int(label[i])
-            f = w[yi].dot(x[i])
+            f = out[i, yi]
             cos_t = f / (w_norm[yi] * x_norm[i])
             # calc k and cos_mt
             k = self.find_k(cos_t)
@@ -92,6 +92,7 @@ class LSoftmaxOp(mx.operator.CustomOp):
         cos_t = np.zeros(n, dtype=np.float32)  # cos(theta)
         cos_mt = np.zeros(n, dtype=np.float32)  # cos(margin * theta)
         sin2_t = np.zeros(n, dtype=np.float32)  # sin(theta) ^ 2
+        fo = np.zeros(n, dtype=np.float32)  # fo_i = dot(x_i, w_yi)
         k = np.zeros(n, dtype=np.int32)
         x_norm = np.linalg.norm(x, axis=1)
         w_norm = np.linalg.norm(w, axis=1)
@@ -102,11 +103,12 @@ class LSoftmaxOp(mx.operator.CustomOp):
             k[i] = self.find_k(cos_t[i])
             cos_mt[i] = self.calc_cos_mt(cos_t[i])
             sin2_t[i] = 1 - cos_t[i]*cos_t[i]
+            fo[i] = f
         # gradient w.r.t. x_i
         for i in range(n):
             # df / dx at x = x_i, w = w_yi
             j = yi = int(label[i])
-            dcos_dx = w[yi] / (w_norm[yi]*x_norm[i]) - x[i] * w[yi].dot(x[i]) / (w_norm[yi]*pow(x_norm[i], 3))
+            dcos_dx = w[yi] / (w_norm[yi]*x_norm[i]) - x[i] * fo[i] / (w_norm[yi]*pow(x_norm[i], 3))
             dsin2_dx = -2 * cos_t[i] * dcos_dx
             dcosm_dx = margin*pow(cos_t[i], margin-1) * dcos_dx  # p = 0
             flag = 1
@@ -126,7 +128,7 @@ class LSoftmaxOp(mx.operator.CustomOp):
                 yi = int(label[i])
                 if yi == j:
                     # df / dw at x = x_i, w = w_yi and yi == j
-                    dcos_dw = x[i] / (w_norm[yi]*x_norm[i]) - w[yi] * w[yi].dot(x[i]) / (x_norm[i]*pow(w_norm[yi], 3))
+                    dcos_dw = x[i] / (w_norm[yi]*x_norm[i]) - w[yi] * fo[i] / (x_norm[i]*pow(w_norm[yi], 3))
                     dsin2_dw = -2 * cos_t[i] * dcos_dw
                     dcosm_dw = margin*pow(cos_t[i], margin-1) * dcos_dw  # p = 0
                     flag = 1
@@ -173,56 +175,46 @@ class LSoftmaxProp(mx.operator.CustomOpProp):
         return LSoftmaxOp(margin=self.margin, beta=self.beta)
 
 
-def test_python_op():
-    """test LSoftmax Operator implemented in Python
+def test_op():
+    """test LSoftmax Operator
     """
-    # build op
+    # build symbol
     batch_size = cmd_args.batch_size
     embedding_dim = cmd_args.embedding_dim
     num_classes = cmd_args.num_classes
     data = mx.sym.Variable('data')
     label = mx.sym.Variable('label')
     weight = mx.sym.Variable('weight')
-    x = np.random.normal(0, 1, (batch_size, embedding_dim))
-    w = np.random.normal(0, 1, (num_classes, embedding_dim))
-    y = np.random.choice(num_classes, batch_size)
-    out = np.zeros((batch_size, num_classes))
-    ctx = mx.cpu()
     args = {
-        'data': mx.nd.array(x, ctx=ctx),
-        'label': mx.nd.array(y, ctx=ctx),
-        'weight': mx.nd.array(w, ctx=ctx),
-        'output': mx.nd.array(out, ctx=ctx),
+        'data': np.random.normal(0, 1, (batch_size, embedding_dim)),
+        'weight': np.random.normal(0, 1, (num_classes, embedding_dim)),
+        'label': np.random.choice(num_classes, batch_size),
     }
-    args_grad = {
-        'data': mx.nd.zeros(x.shape, ctx=ctx),
-        'label': mx.nd.zeros(y.shape, ctx=ctx),
-        'weight': mx.nd.zeros(w.shape, ctx=ctx),
-        'output': mx.nd.zeros(out.shape, ctx=ctx),
-    }
-    op = LSoftmaxOp(margin=cmd_args.margin, beta=cmd_args.beta)
 
-    def forward():
-        op.forward(is_train=True, req=['write'],
-                   in_data=[args['data'], args['label'], args['weight'],],
-                   out_data=[args['output'],],
-                   aux=[])
+    if cmd_args.op_impl == 'py':
+        symbol = mx.sym.Custom(data=data, label=label, weight=weight, num_hidden=10,
+                               beta=cmd_args.beta, margin=cmd_args.margin,
+                               op_type='LSoftmax', name='lsoftmax')
+    else:
+        symbol = mx.sym.LSoftmax(data=data, label=label, weight=weight, num_hidden=num_classes,
+                                 margin=cmd_args.margin, beta=cmd_args.beta, name='lsoftmax')
 
-    def backward():
-        op.backward(req=['write', 'null', 'write'],
-                    out_grad=[args_grad['output'],],
-                    in_data=[args['data'], args['label'], args['weight'],],
-                    out_data=[args['output'],],
-                    in_grad=[args_grad['data'], args_grad['label'], args_grad['weight'],],
-                    aux=[])
+    data_shape = (batch_size, embedding_dim)
+    label_shape = (batch_size,)
+    weight_shape = (num_classes, embedding_dim)
+    ctx = mx.cpu() if cmd_args.op_impl == 'py' else mx.gpu()
+    executor = symbol.simple_bind(ctx=ctx, data=data_shape, label=label_shape, weight=weight_shape)
 
-    # test forward
-    forward()
-    output = args['output'].asnumpy()
-    diff = x.dot(w.T) - output
+    def forward(data, label, weight):
+        data = mx.nd.array(data, ctx=ctx)
+        label = mx.nd.array(label, ctx=ctx)
+        weight = mx.nd.array(weight, ctx=ctx)
+        executor.forward(is_train=True, data=data, label=label, weight=weight)
+        return executor.output_dict['lsoftmax_output'].asnumpy()
 
-    # test backward
-    loss = lambda x: np.square(x).sum() / 2
+    def backward(out_grad):
+        executor.backward(out_grads=[mx.nd.array(out_grad, ctx=ctx)])
+        return executor.grad_dict
 
     def gradient_check(name, i, j):
         '''gradient check on x[i, j]
@@ -230,50 +222,49 @@ def test_python_op():
         eps = 1e-4
         threshold = 1e-2
         reldiff = lambda a, b: abs(a-b) / (abs(a) + abs(b))
-        x = args[name].asnumpy()
         # calculate by backward
-        forward()
-        args_grad['output'] = args['output']
-        backward()
-        grad = args_grad[name].asnumpy()[i, j]
+        output = forward(data=args['data'], weight=args['weight'], label=args['label'])
+        grad_dict = backward(output)
+        grad = grad_dict[name].asnumpy()[i, j]
         # calculate by \delta f / 2 * eps
-        x1 = x.copy()
-        x1[i, j] -= eps
-        args[name] = mx.nd.array(x1, ctx=ctx)
-        forward()
-        loss1 = loss(args['output'].asnumpy())
-        x2 = x.copy()
-        x2[i, j] += eps
-        args[name] = mx.nd.array(x2, ctx=ctx)
-        forward()
-        loss2 = loss(args['output'].asnumpy())
-        grad_ = (loss2 - loss1) / (2 * eps)
+        loss = lambda x: np.square(x).sum() / 2
+        args[name][i, j] -= eps
+        loss1 = loss(forward(data=args['data'], weight=args['weight'], label=args['label']))
+        args[name][i, j] += 2 * eps
+        loss2 = loss(forward(data=args['data'], weight=args['weight'], label=args['label']))
+        grad_expect = (loss2 - loss1) / (2 * eps)
         # check
-        rel_err = reldiff(grad_, grad)
+        rel_err = reldiff(grad_expect, grad)
         if rel_err > threshold:
             print 'gradient check failed'
-            print 'expected %lf given %lf, relative error %lf'%(grad_, grad, rel_err)
+            print 'expected %lf given %lf, relative error %lf'%(grad_expect, grad, rel_err)
+            return False
         else:
             print 'gradient check pass'
+            return True
 
-    # gradient check on x
-    n = x.size / 2
-    for i in range(n):
-        x_i, x_j = np.random.choice(x.shape[0]), np.random.choice(x.shape[1])
-        print 'gradient check on x[%d, %d]'%(x_i, x_j)
-        gradient_check('data', x_i, x_j)
-    # gradient check on w
-    n = w.size / 2
-    for i in range(n):
-        w_i, w_j = np.random.choice(w.shape[0]), np.random.choice(w.shape[1])
-        print 'gradient check on w[%d, %d]'%(w_i, w_j)
-        gradient_check('weight', w_i, w_j)
+    # test forward
+    output = forward(data=args['data'], weight=args['weight'], label=args['label'])
+    diff = args['data'].dot(args['weight'].T) - output
 
-
-def test_cpp_op():
-    """test LSoftmax Operator implemented in C++
-    """
-    pass
+    # test backward
+    # gradient check on data
+    data_gc_pass = 0
+    for i in range(args['data'].shape[0]):
+        for j in range(args['data'].shape[1]):
+            print 'gradient check on data[%d, %d]'%(i, j)
+            if gradient_check('data', i, j):
+                data_gc_pass += 1
+    # gradient check on weight
+    weight_gc_pass = 0
+    for i in range(args['weight'].shape[0]):
+        for j in range(args['weight'].shape[1]):
+            print 'gradient check on weight[%d, %d]'%(i, j)
+            if gradient_check('weight', i, j):
+                weight_gc_pass += 1
+    print '===== Summary ====='
+    print 'gradient on data pass ratio is %lf'%(float(data_gc_pass) / args['data'].size)
+    print 'gradient on weight pass ratio is %lf'%(float(weight_gc_pass) / args['weight'].size)
 
 
 if __name__ == '__main__':
@@ -284,9 +275,18 @@ if __name__ == '__main__':
     parser.add_argument('--num-classes', type=int, default=10, help="test number of classes")
     parser.add_argument('--embedding-dim', type=int, default=3, help="test embedding dimension")
     parser.add_argument('--margin', type=int, default=2, help="test lsoftmax margin")
-    parser.add_argument('--beta', type=float, default=10, help="test lsoftmax beta")
+    parser.add_argument('--beta', type=float, default=10, help="test lsoftmax beta, same as lambda")
+    parser.add_argument('--op-impl', type=str, choices=['py', 'cpp'], default='py', help="test op implementation")
     cmd_args = parser.parse_args()
     print cmd_args
 
-    test_python_op()
-    test_cpp_op()
+    # check
+    if cmd_args.op_impl == 'cpp':
+        try:
+            op_creator = mx.sym.LSoftmax
+        except AttributeError:
+            print 'No cpp operator for LSoftmax, Skip test'
+            import sys
+            sys.exit(0)
+
+    test_op()
