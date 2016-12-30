@@ -1,6 +1,8 @@
 data
 model
 
+profile.json
+
 *.pyc
 *.jpg
 *.png
