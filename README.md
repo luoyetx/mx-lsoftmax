@@ -7,7 +7,7 @@ mxnet version of [Large-Margin Softmax Loss for Convolutional Neural Networks][l
 
 I put all formula I used to calculate the derivatives below. You can check it by yourself. If there's a mistake, please do tell me or open an issue.
 
-The derivatives doesn't include `lambda` in the paper, but the code does.
+The derivatives doesn't include `lambda` in the paper, but the code does. Instead of using `lambda` to weight the original `f_i_yi = |w_yi||x_i|cos(t)`, the code uses `beta` to weight the newly calculated `f_i_yi = |w_yi||x_i|cos(mt)`. Therefore, if you want to set `lambda = 0.1`, you should set `beta = 10`.
 
 ![formula](imgs/formula.jpg)
 
@@ -17,7 +17,7 @@ Gradient check can be failed with data type float32 but ok with data type float6
 
 ## Operator Performance
 
-I implement the operator both in Python and C++(CUDA). The performance below is training LeNet on a single GTX1070 with parameters margin = 3, lambda = 1. **Notice** the C++ implement can only run on GPU context.
+I implement the operator both in Python and C++(CUDA). The performance below is training LeNet on a single GTX1070 with parameters margin = 3, beta = 1. **Notice** the C++ implement can only run on GPU context.
 
 |Batch Size     |traditional fully connected    |lsoftmax in Python         |lsoftmax in C++(CUDA)      |
 |---------------|-------------------------------|---------------------------|---------------------------|
@@ -30,15 +30,15 @@ I implement the operator both in Python and C++(CUDA). The performance below is 
 
 ![lsoftmax-margin-1](imgs/mnist-lsoftmax-margin-1.png)
 
-### lsoftmax with margin = 2 and lambda = 1
+### lsoftmax with margin = 2 and beta = 1
 
 ![lsoftmax-margin-2](imgs/mnist-lsoftmax-margin-2.png)
 
-### lsoftmax with margin = 3 and lambda = 1
+### lsoftmax with margin = 3 and beta = 1
 
 ![lsoftmax-margin-3](imgs/mnist-lsoftmax-margin-3.png)
 
-### lsoftmax with margin = 4 and lambda = 1
+### lsoftmax with margin = 4 and beta = 1
 
 ![lsoftmax-margin-4](imgs/mnist-lsoftmax-margin-4.png)
 

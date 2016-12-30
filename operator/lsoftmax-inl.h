@@ -33,7 +33,7 @@ struct LSoftmaxParam : public dmlc::Parameter<LSoftmaxParam> {
     DMLC_DECLARE_FIELD(margin).set_default(2).set_lower_bound(1)
     .describe("LSoftmax margin");
     DMLC_DECLARE_FIELD(beta).set_default(1).set_lower_bound(0)
-    .describe("LSoftmax beta, same as lambda");
+    .describe("LSoftmax beta");
     DMLC_DECLARE_FIELD(num_hidden).set_lower_bound(1)
     .describe("Number of hidden nodes of the output");
   }

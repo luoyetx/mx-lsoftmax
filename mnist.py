@@ -176,7 +176,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--gpu', type=int, default=-1, help="gpu device")
     parser.add_argument('--lr', type=float, default=0.01, help="learning rate")
-    parser.add_argument('--beta', type=float, default=1, help="beta as lambda in lsoftmax")
+    parser.add_argument('--beta', type=float, default=1, help="beta in lsoftmax")
     parser.add_argument('--batch-size', type=int, default=128, help="batch size")
     parser.add_argument('--train', action='store_true', help="train mnist")
     parser.add_argument('--test', action='store_true', help="test mnist and plot")

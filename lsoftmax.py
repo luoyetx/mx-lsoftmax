@@ -275,7 +275,7 @@ if __name__ == '__main__':
     parser.add_argument('--num-classes', type=int, default=10, help="test number of classes")
     parser.add_argument('--embedding-dim', type=int, default=3, help="test embedding dimension")
     parser.add_argument('--margin', type=int, default=2, help="test lsoftmax margin")
-    parser.add_argument('--beta', type=float, default=10, help="test lsoftmax beta, same as lambda")
+    parser.add_argument('--beta', type=float, default=10, help="test lsoftmax beta")
     parser.add_argument('--op-impl', type=str, choices=['py', 'cpp'], default='py', help="test op implementation")
     cmd_args = parser.parse_args()
     print cmd_args
