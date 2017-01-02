@@ -17,12 +17,12 @@ Gradient check can be failed with data type float32 but ok with data type float6
 
 ## Operator Performance
 
-I implement the operator both in Python and C++(CUDA). The performance below is training LeNet on a single GTX1070 with parameters margin = 3, beta = 1. **Notice** the C++ implement can only run on GPU context.
+I implement the operator both in Python and C++(CUDA). The performance below is training LeNet on a single GTX1070 with parameters margin = 4, beta = 1. **Notice** the C++ implement can only run on GPU context.
 
 |Batch Size     |traditional fully connected    |lsoftmax in Python         |lsoftmax in C++(CUDA)      |
 |---------------|-------------------------------|---------------------------|---------------------------|
-|128            |~45000 samples / sec           |3000 ~ 4000 samples / sec  |~26000 samples / sec       |
-|256            |~54000 samples / sec           |5000 ~ 6000 samples / sec  |~30000 samples / sec       |
+|128            |~45000 samples / sec           |2800 ~ 3300 samples / sec  |~40000 samples / sec       |
+|256            |~54000 samples / sec           |3500 ~ 4200 samples / sec  |~47000 samples / sec       |
 
 ## Visualization
 
