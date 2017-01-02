@@ -11,17 +11,13 @@ namespace cuda {
 
 namespace {
 // workspace variables
-enum LSoftmaxTempSpaceType {kCost, kCosmt, kK, kSin2t, kFo, kCostM};
+enum LSoftmaxTempSpaceType {kCost, kCosmt, kK, kSin2t, kFo};
 }
 
 #define CUDA_KERNEL_LOOP(i, n) \
   for (int i = blockIdx.x * blockDim.x + threadIdx.x; \
        i < (n); \
        i += blockDim.x * gridDim.x)
-
-MSHADOW_XINLINE int LSPowOfMO(const int k) {
-  return 1 - ((k&0x01) << 1);
-}
 
 template<typename DType>
 __global__ void LSCalcNorm(const Tensor<gpu, 2, DType> x,
@@ -53,13 +49,11 @@ template<typename DType>
 __device__ DType LSCalcCosmt(const DType *c_table, const int n,
                              const DType cos_t, const int margin) {
   const DType sin2_t = 1 - cos_t * cos_t;
-  DType cos_t_p = pow(cos_t, margin);
-  DType sin2_t_p = 1;
-  DType cos_mt = cos_t_p;  // p = 0
-  for (int p = 1; p <= margin / 2; ++p) {
-    cos_t_p /= 1 - sin2_t;
-    sin2_t_p *= sin2_t;
-    cos_mt += LSPowOfMO(p) * c_table[2*p] * cos_t_p * sin2_t_p;
+  DType cos_mt = 0;
+  DType flag = -1;
+  for (int p = 0; p <= margin / 2; ++p) {
+    flag *= -1;
+    cos_mt += flag * c_table[2*p] * pow(cos_t, margin-2*p) * pow(sin2_t, p);
   }
   return cos_mt;
 }
@@ -84,7 +78,7 @@ __global__ void LSoftmaxForwardKernel(const Tensor<gpu, 2, DType> x,
     const DType cos_t = fo_i_yi / (x_norm[i] * w_norm[yi]);
     const int k = LSFindK(k_table.dptr_, k_table.size(0), cos_t);
     const DType cos_mt = LSCalcCosmt(c_table.dptr_, c_table.size(0), cos_t, margin);
-    const DType f_i_yi = (LSPowOfMO(k) * cos_mt - 2*k) * (w_norm[yi] * x_norm[i]);
+    const DType f_i_yi = (pow(-1, k) * cos_mt - 2*k) * (w_norm[yi] * x_norm[i]);
     out[i][yi] = (beta * f_i_yi + fo_i_yi) / (1 + beta);
   }
 }
@@ -139,7 +133,6 @@ __global__ void LSoftmaxBackwardRequired(const Tensor<gpu, 2, DType> x,
     workspace[kK][i] = static_cast<DType>(k);
     workspace[kSin2t][i] = sin2_t;
     workspace[kFo][i] = fo_i_yi;
-    workspace[kCostM][i] = pow(cos_t, margin - 1);
   }
 }
 
@@ -170,19 +163,18 @@ __global__ void LSoftmaxBackwardXKernel(const Tensor<gpu, 2, DType> x,
     const DType x_norm_i = x_norm[i];
 
     const DType dcos_dx = w[yi][l] / (w_norm_yi * x_norm_i) - \
-                          fo_i_yi * x[i][l] / (w_norm_yi * x_norm_i * x_norm_i * x_norm_i);
+                          fo_i_yi * x[i][l] / (w_norm_yi * pow(x_norm_i, 3));
     const DType dsin2_dx = -2 * cos_t * dcos_dx;
-    DType cos_t_p = workspace[kCostM][i];
-    DType sin2_t_p = 1;
-    DType dcosm_dx = margin * cos_t_p * dcos_dx;  // p = 0
+    DType dcosm_dx = margin * pow(cos_t, margin - 1) * dcos_dx;  // p = 0
+    DType flag = 1;
     for (int p = 1; p <= margin / 2; ++p) {
-      cos_t_p /= 1 - sin2_t;
-      dcosm_dx += LSPowOfMO(p) * c_table[2*p] * (p * cos_t * dsin2_dx + \
-                    (margin - 2*p) * sin2_t * dcos_dx) * cos_t_p * sin2_t_p;
-      sin2_t_p *= sin2_t;
+      flag *= -1;
+      dcosm_dx += flag * c_table[2*p] * ( \
+                    p * pow(cos_t, margin - 2*p) * pow(sin2_t, p-1) * dsin2_dx + \
+                    (margin - 2*p) * pow(cos_t, margin - 2*p - 1) * pow(sin2_t, p) * dcos_dx);
     }
-    const DType df_dx = (LSPowOfMO(k) * cos_mt - 2*k) * w_norm_yi / x_norm_i * x[i][l] + \
-                         LSPowOfMO(k) * w_norm_yi * x_norm_i * dcosm_dx;
+    const DType df_dx = (pow(-1, k) * cos_mt - 2*k) * w_norm_yi / x_norm_i * x[i][l] + \
+                         pow(-1, k) * w_norm_yi * x_norm_i * dcosm_dx;
     const DType alpha = beta / (1 + beta);
     x_grad[i][l] += alpha * o_grad[i][yi] * (df_dx - w[yi][l]);
   }
@@ -219,19 +211,18 @@ __global__ void LSoftmaxBackwardWKernel(const Tensor<gpu, 2, DType> x,
         const DType w_norm_yi = w_norm[yi];
 
         const DType dcos_dw = x[i][l] / (w_norm_yi * x_norm_i) - \
-                              fo_i_yi * w[yi][l] / (x_norm_i * w_norm_yi * w_norm_yi * w_norm_yi);
+                              fo_i_yi * w[yi][l] / (x_norm_i * pow(w_norm_yi, 3));
         const DType dsin2_dw = -2 * cos_t * dcos_dw;
-        DType cos_t_p = workspace[kCostM][i];
-        DType sin2_t_p = 1;
-        DType dcosm_dw = margin * cos_t_p * dcos_dw;  // p = 0
+        DType dcosm_dw = margin * pow(cos_t, margin - 1) * dcos_dw;  // p = 0
+        DType flag = 1;
         for (int p = 1; p <= margin / 2; ++p) {
-          cos_t_p /= 1 - sin2_t;
-          dcosm_dw += LSPowOfMO(p) * c_table[2*p] * (p * cos_t * dsin2_dw + \
-                        (margin - 2*p) * sin2_t * dcos_dw) * cos_t_p * sin2_t_p;
-          sin2_t_p *= sin2_t;
+          flag *= -1;
+          dcosm_dw += flag * c_table[2*p] * ( \
+                        p * pow(cos_t, margin - 2*p) * pow(sin2_t, p - 1) * dsin2_dw + \
+                        (margin - 2*p) * pow(cos_t, margin - 2*p -1) * pow(sin2_t, p) * dcos_dw);
         }
-        const DType df_dw_j = (LSPowOfMO(k) * cos_mt - 2*k) * x_norm_i / w_norm_yi * w[yi][l] + \
-                               LSPowOfMO(k) * w_norm_yi * x_norm_i * dcosm_dw;
+        const DType df_dw_j = (pow(-1, k) * cos_mt - 2*k) * x_norm_i / w_norm_yi * w[yi][l] + \
+                               pow(-1, k) * w_norm_yi * x_norm_i * dcosm_dw;
         dw += o_grad[i][yi] * (df_dw_j - x[i][l]);
       }
     }

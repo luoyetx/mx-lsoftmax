@@ -132,8 +132,8 @@ class LSoftmaxOp : public Operator {
     Tensor<xpu, 2, DType> o_grad = out_grad[lsoftmax_enum::kOut].FlatTo2D<xpu, DType>(s);
     Tensor<xpu, 2, DType> x_grad = in_grad[lsoftmax_enum::kData].FlatTo2D<xpu, DType>(s);
     Tensor<xpu, 2, DType> w_grad = in_grad[lsoftmax_enum::kWeight].FlatTo2D<xpu, DType>(s);
-    // workspace is used for cos_t, cos_mt, k, sin2_t, fo and cos_t_m for every data point
-    Tensor<xpu, 2, DType> workspace = ctx.requested[lsoftmax_enum::kTempSpace].get_space_typed<xpu, 2, DType>(Shape2(6, n), s);
+    // workspace is used for cos_t, cos_mt, k, sin2_t and fo for every data point
+    Tensor<xpu, 2, DType> workspace = ctx.requested[lsoftmax_enum::kTempSpace].get_space_typed<xpu, 2, DType>(Shape2(5, n), s);
 #if defined(__CUDACC__)
     CHECK_EQ(s->blas_handle_ownership_, Stream<xpu>::OwnHandle)
         << "Must init CuBLAS handle in stream";
