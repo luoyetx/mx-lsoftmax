@@ -12,9 +12,10 @@ class LSoftmaxOp(mx.operator.CustomOp):
     '''LSoftmax from <Large-Margin Softmax Loss for Convolutional Neural Networks>
     '''
 
-    def __init__(self, margin, beta):
+    def __init__(self, margin, beta, scale):
         self.margin = int(margin)
         self.beta = float(beta)
+        self.scale = float(scale)
         self.c_map = []
         self.k_map = []
         c_m_n = lambda m, n: math.factorial(n) / math.factorial(m) / math.factorial(n-m)
@@ -54,21 +55,22 @@ class LSoftmaxOp(mx.operator.CustomOp):
         label = label.asnumpy()
         # original fully connected
         out = x.dot(w.T)
-        # large margin fully connected
-        n = label.shape[0]
-        w_norm = np.linalg.norm(w, axis=1)
-        x_norm = np.linalg.norm(x, axis=1)
-        for i in range(n):
-            j = yi = int(label[i])
-            f = out[i, yi]
-            cos_t = f / (w_norm[yi] * x_norm[i])
-            # calc k and cos_mt
-            k = self.find_k(cos_t)
-            cos_mt = self.calc_cos_mt(cos_t)
-            # f_i_j = (\beta * f_i_j + fo_i_j) / (1 + \beta)
-            fo_i_j = f
-            f_i_j = (pow(-1, k) * cos_mt - 2*k) * (w_norm[yi] * x_norm[i])
-            out[i, yi] = (self.beta * f_i_j + fo_i_j) / (1 + self.beta)
+        if is_train:
+            # large margin fully connected
+            n = label.shape[0]
+            w_norm = np.linalg.norm(w, axis=1)
+            x_norm = np.linalg.norm(x, axis=1)
+            for i in range(n):
+                j = yi = int(label[i])
+                f = out[i, yi]
+                cos_t = f / (w_norm[yi] * x_norm[i])
+                # calc k and cos_mt
+                k = self.find_k(cos_t)
+                cos_mt = self.calc_cos_mt(cos_t)
+                # f_i_j = (\beta * f_i_j + fo_i_j) / (1 + \beta)
+                fo_i_j = f
+                f_i_j = (pow(-1, k) * cos_mt - 2*k) * (w_norm[yi] * x_norm[i])
+                out[i, yi] = (f_i_j + self.beta * fo_i_j) / (1 + self.beta)
         self.assign(out_data[0], req[0], mx.nd.array(out))
 
     def backward(self, req, out_grad, in_data, out_data, in_grad, aux):
@@ -119,7 +121,7 @@ class LSoftmaxOp(mx.operator.CustomOp):
                                 (margin-2*p)*pow(cos_t[i], margin-2*p-1)*pow(sin2_t[i], p)*dcos_dx)
             df_dx = (pow(-1, k[i]) * cos_mt[i] - 2*k[i]) * w_norm[yi] / x_norm[i] * x[i] + \
                      pow(-1, k[i]) * w_norm[yi] * x_norm[i] * dcosm_dx
-            alpha = self.beta / (1 + self.beta)
+            alpha = 1 / (1 + self.beta)
             x_grad[i] += alpha * o_grad[i, yi] * (df_dx - w[yi])
         # gradient w.r.t. w_j
         for j in range(m):
@@ -140,20 +142,23 @@ class LSoftmaxOp(mx.operator.CustomOp):
                     df_dw_j = (pow(-1, k[i]) * cos_mt[i] - 2*k[i]) * x_norm[i] / w_norm[yi] * w[yi] + \
                                pow(-1, k[i]) * w_norm[yi] * x_norm[i] * dcosm_dw
                     dw += o_grad[i, yi] * (df_dw_j - x[i])
-            alpha = self.beta / (1 + self.beta)
+            alpha = 1 / (1 + self.beta)
             w_grad[j] += alpha * dw
         self.assign(in_grad[0], req[0], mx.nd.array(x_grad))
         self.assign(in_grad[2], req[2], mx.nd.array(w_grad))
+        # dirty hack, should also work for multi devices
+        self.beta *= self.scale
 
 
 @mx.operator.register("LSoftmax")
 class LSoftmaxProp(mx.operator.CustomOpProp):
 
-    def __init__(self, num_hidden, beta, margin):
+    def __init__(self, num_hidden, beta, margin, scale=1):
         super(LSoftmaxProp, self).__init__(need_top_grad=True)
         self.margin = int(margin)
         self.num_hidden = int(num_hidden)
         self.beta = float(beta)
+        self.scale = float(scale)
 
     def list_arguments(self):
         return ['data', 'label', 'weight']
@@ -172,7 +177,7 @@ class LSoftmaxProp(mx.operator.CustomOpProp):
         return [dshape, lshape, wshape], [oshape,], []
 
     def create_operator(self, ctx, shapes, dtypes):
-        return LSoftmaxOp(margin=self.margin, beta=self.beta)
+        return LSoftmaxOp(margin=self.margin, beta=self.beta, scale=self.scale)
 
 
 def test_op():
@@ -193,11 +198,12 @@ def test_op():
 
     if cmd_args.op_impl == 'py':
         symbol = mx.sym.Custom(data=data, label=label, weight=weight, num_hidden=10,
-                               beta=cmd_args.beta, margin=cmd_args.margin,
+                               beta=cmd_args.beta, margin=cmd_args.margin, scale=cmd_args.scale,
                                op_type='LSoftmax', name='lsoftmax')
     else:
         symbol = mx.sym.LSoftmax(data=data, label=label, weight=weight, num_hidden=num_classes,
-                                 margin=cmd_args.margin, beta=cmd_args.beta, name='lsoftmax')
+                                 margin=cmd_args.margin, beta=cmd_args.beta, scale=cmd_args.scale,
+                                 name='lsoftmax')
 
     data_shape = (batch_size, embedding_dim)
     label_shape = (batch_size,)
@@ -276,6 +282,7 @@ if __name__ == '__main__':
     parser.add_argument('--embedding-dim', type=int, default=3, help="test embedding dimension")
     parser.add_argument('--margin', type=int, default=2, help="test lsoftmax margin")
     parser.add_argument('--beta', type=float, default=10, help="test lsoftmax beta")
+    parser.add_argument('--scale', type=float, default=1, help="beta scale of every mini-batch")
     parser.add_argument('--op-impl', type=str, choices=['py', 'cpp'], default='py', help="test op implementation")
     cmd_args = parser.parse_args()
     print cmd_args

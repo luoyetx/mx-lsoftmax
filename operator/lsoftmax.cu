@@ -85,7 +85,7 @@ __global__ void LSoftmaxForwardKernel(const Tensor<gpu, 2, DType> x,
     const int k = LSFindK(k_table.dptr_, k_table.size(0), cos_t);
     const DType cos_mt = LSCalcCosmt(c_table.dptr_, c_table.size(0), cos_t, margin);
     const DType f_i_yi = (LSPowOfMO(k) * cos_mt - 2*k) * (w_norm[yi] * x_norm[i]);
-    out[i][yi] = (beta * f_i_yi + fo_i_yi) / (1 + beta);
+    out[i][yi] = (f_i_yi + beta * fo_i_yi) / (1 + beta);
   }
 }
 
@@ -183,7 +183,7 @@ __global__ void LSoftmaxBackwardXKernel(const Tensor<gpu, 2, DType> x,
     }
     const DType df_dx = (LSPowOfMO(k) * cos_mt - 2*k) * w_norm_yi / x_norm_i * x[i][l] + \
                          LSPowOfMO(k) * w_norm_yi * x_norm_i * dcosm_dx;
-    const DType alpha = beta / (1 + beta);
+    const DType alpha = 1 / (1 + beta);
     x_grad[i][l] += alpha * o_grad[i][yi] * (df_dx - w[yi][l]);
   }
 }
@@ -235,7 +235,7 @@ __global__ void LSoftmaxBackwardWKernel(const Tensor<gpu, 2, DType> x,
         dw += o_grad[i][yi] * (df_dw_j - x[i][l]);
       }
     }
-    const DType alpha = beta / (1 + beta);
+    const DType alpha = 1 / (1 + beta);
     w_grad[j][l] += alpha * dw;
   }
 }
