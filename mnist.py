@@ -31,7 +31,7 @@ def get_symbol():
     fc3 = mx.sym.FullyConnected(data=pool2, num_hidden=256)
     relu3 = mx.sym.Activation(data=fc3, act_type='relu')
 
-    embedding = mx.sym.FullyConnected(data=relu3, num_hidden=2, name='embedding')
+    embedding = mx.sym.FullyConnected(data=relu3, num_hidden=args.embed_dim, name='embedding')
     if not args.no_lsoftmax:
         if args.op_impl == 'cpp':
             fc4 = mx.sym.LSoftmax(data=embedding, label=label, num_hidden=10,
@@ -114,33 +114,45 @@ def test():
         labels.append(batch.label[0].asnumpy())
     embeds = np.vstack(embeds)
     labels = np.hstack(labels)
-    # vis, plot code from https://github.com/pangyupo/mxnet_center_loss
-    num = len(labels)
-    names = dict()
-    for i in range(10):
-        names[i]=str(i)
-    palette = np.array(sns.color_palette("hls", 10))
-    f = plt.figure(figsize=(8, 8))
-    ax = plt.subplot(aspect='equal')
-    sc = ax.scatter(embeds[:,0], embeds[:,1], lw=0, s=40,
-                    c=palette[labels.astype(np.int)])
-    ax.axis('off')
-    ax.axis('tight')
 
-    # We add the labels for each digit.
-    txts = []
-    for i in range(10):
-        # Position of each label.
-        xtext, ytext = np.median(embeds[labels == i, :], axis=0)
-        txt = ax.text(xtext, ytext, names[i])
-        txt.set_path_effects([
-            PathEffects.Stroke(linewidth=5, foreground="w"),
-            PathEffects.Normal()])
-        txts.append(txt)
-
+    # output
     margin = args.margin if not args.no_lsoftmax else 1
-    fname = 'mnist-lsoftmax-margin-%d.png'%margin
-    plt.savefig(fname)
+    fname = 'mnist-lsoftmax-margin-%d'%margin
+    embedding_dim = len(embeds[0])
+    if embedding_dim == 2:
+        # vis, plot code from https://github.com/pangyupo/mxnet_center_loss
+        num = len(labels)
+        names = dict()
+        for i in range(10):
+            names[i]=str(i)
+        palette = np.array(sns.color_palette("hls", 10))
+        f = plt.figure(figsize=(8, 8))
+        ax = plt.subplot(aspect='equal')
+        sc = ax.scatter(embeds[:,0], embeds[:,1], lw=0, s=40,
+                        c=palette[labels.astype(np.int)])
+        ax.axis('off')
+        ax.axis('tight')
+
+        # We add the labels for each digit.
+        txts = []
+        for i in range(10):
+            # Position of each label.
+            xtext, ytext = np.median(embeds[labels == i, :], axis=0)
+            txt = ax.text(xtext, ytext, names[i])
+            txt.set_path_effects([
+                PathEffects.Stroke(linewidth=5, foreground="w"),
+                PathEffects.Normal()])
+            txts.append(txt)
+        plt.savefig(fname + '.png')
+
+    # save result to tsv file, view on http://projector.tensorflow.org/
+    with open(fname + '.tsv', 'w') as fout:
+        for embed in embeds:
+            fout.write('\t'.join([str(x) for x in embed]))
+            fout.write('\n')
+    with open(fname + '.meta.tsv', 'w') as fout:
+        for label in labels:
+            fout.write('%d\n'%label)
 
 
 def profile():
@@ -180,6 +192,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=0.01, help="learning rate")
     parser.add_argument('--beta', type=float, default=1, help="beta in lsoftmax, same as lambda")
     parser.add_argument('--scale', type=float, default=1, help="beta scale for every mini-batch")
+    parser.add_argument('--embed-dim', type=int, default=2, help="embedding dimension")
     parser.add_argument('--batch-size', type=int, default=128, help="batch size")
     parser.add_argument('--train', action='store_true', help="train mnist")
     parser.add_argument('--test', action='store_true', help="test mnist and plot")

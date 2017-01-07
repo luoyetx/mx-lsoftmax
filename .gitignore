@@ -6,3 +6,4 @@ profile.json
 *.pyc
 *.jpg
 *.png
+*.tsv
