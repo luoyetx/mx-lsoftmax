@@ -19,6 +19,36 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+class Metric(mx.metric.EvalMetric):
+
+    def __init__(self, center_loss=False):
+        num = 2 if center_loss else 1
+        super(Metric, self).__init__('mnist', num)
+        self.center_loss = center_loss
+
+    def update(self, labels, preds):
+        # accuracy
+        pred_label = mx.nd.argmax_channel(preds[0]).asnumpy().astype('int32')
+        label = labels[0].asnumpy().astype('int32')
+        self.sum_metric[0] += (pred_label.flat == label.flat).sum()
+        self.num_inst[0] += len(pred_label.flat)
+        # if center loss
+        if self.center_loss:
+            self.sum_metric[1] += np.square(preds[1].asnumpy()).sum() / 2
+            self.num_inst[1] += label.shape[0]
+
+    def get(self):
+        values = [x / y if y != 0 else float('nan') \
+                  for x, y in zip(self.sum_metric, self.num_inst)]
+        if self.center_loss:
+            assert len(values) == 2
+            names = ['accuracy', 'center_loss']
+        else:
+            assert len(values) == 1
+            names = ['accuracy']
+        return (names, values)
+
+
 def get_symbol():
     data = mx.sym.Variable('data')
     label = mx.sym.Variable('softmax_label')
@@ -44,7 +74,13 @@ def get_symbol():
     else:
         fc4 = mx.sym.FullyConnected(data=embedding, num_hidden=10, no_bias=True)
     softmax_loss = mx.sym.SoftmaxOutput(data=fc4, label=label)
-    return softmax_loss
+
+    if args.center_loss:
+        center_loss = mx.sym.CenterLoss(data=embedding, label=label, num_classes=10,
+                                        alpha=args.center_alpha, scale=args.center_scale)
+        return mx.sym.Group([softmax_loss, center_loss])
+    else:
+        return softmax_loss
 
 
 def train():
@@ -80,7 +116,7 @@ def train():
     }
     mod.fit(train_data=train,
             eval_data=val,
-            eval_metric=mx.metric.Accuracy(),
+            eval_metric=Metric(center_loss=args.center_loss),
             initializer=mx.init.Xavier(),
             optimizer='sgd',
             optimizer_params=optim_params,
@@ -202,6 +238,9 @@ if __name__ == '__main__':
     parser.add_argument('--model-prefix', type=str, default='model/mnist', help="model predix")
     parser.add_argument('--num-epoch', type=int, default=20, help="number of epoches to train")
     parser.add_argument('--op-impl', type=str, choices=['py', 'cpp'], default='py', help="operator implementation")
+    parser.add_argument('--center-loss', action='store_true', help="plug in center loss")
+    parser.add_argument('--center-alpha', type=float, default=0.5, help="center loss alpha")
+    parser.add_argument('--center-scale', type=float, default=1, help="center loss scale")
     parser.add_argument('--profile', action='store_true', help="do profile")
     args = parser.parse_args()
     print args
