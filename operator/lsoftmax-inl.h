@@ -28,6 +28,7 @@ enum LSoftmaxResource {kTempSpace};
 struct LSoftmaxParam : public dmlc::Parameter<LSoftmaxParam> {
   int margin;
   float beta;
+  float beta_min;
   float scale;
   int num_hidden;
   bool verbose;
@@ -36,8 +37,10 @@ struct LSoftmaxParam : public dmlc::Parameter<LSoftmaxParam> {
     .describe("LSoftmax margin");
     DMLC_DECLARE_FIELD(beta).set_default(1).set_lower_bound(0)
     .describe("LSoftmax beta, same as lambda to weight original value");
+    DMLC_DECLARE_FIELD(beta_min).set_default(0).set_lower_bound(0)
+    .describe("Minimum beta");
     DMLC_DECLARE_FIELD(scale).set_default(1).set_range(0, 1)
-    .describe("beta scale during training for every mini-batch");
+    .describe("Scale of beta during training for every iteration");
     DMLC_DECLARE_FIELD(num_hidden).set_lower_bound(1)
     .describe("Number of hidden nodes of the output");
     DMLC_DECLARE_FIELD(verbose).set_default(false)
@@ -169,6 +172,7 @@ class LSoftmaxOp : public Operator {
     FreeSpace(&c_table_xpu);
     // dirty hack, should also work for multi device
     param_.beta *= param_.scale;
+    param_.beta = std::max(param_.beta, param_.beta_min);
     if (param_.beta < next_beta_) {
       next_beta_ *= 0.1f;
       if (param_.verbose) {

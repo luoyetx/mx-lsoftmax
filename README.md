@@ -42,13 +42,19 @@ I implement the operator both in Python and C++(CUDA). The performance below is 
 
 ![lsoftmax-margin-4](imgs/mnist-lsoftmax-margin-4.png)
 
+### lsoftmax with margin = 6, beta = 1000 and scale = 0.99
+
+![lsoftmax-margin-6](imgs/mnist-lsoftmax-margin-6.png)
+
 ## References
 
-- [MXNet](mxnet)
-- [mxnet_center_loss](mxnet-center-loss)
+- [MXNet][mxnet]
+- [pangyupo/mxnet_center_loss][mxnet-center-loss]
 - [Large-Margin Softmax Loss for Convolutional Neural Networks][lsoftmax]
+- [wy1iu/LargeMargin_Softmax_Loss][LargeMargin_Softmax_Loss]
 
 
 [mxnet]: https://github.com/dmlc/mxnet
 [lsoftmax]: https://arxiv.org/pdf/1612.02295.pdf
 [mxnet-center-loss]: https://github.com/pangyupo/mxnet_center_loss
+[LargeMargin_Softmax_Loss]: https://github.com/wy1iu/LargeMargin_Softmax_Loss
