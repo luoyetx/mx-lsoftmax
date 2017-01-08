@@ -12,9 +12,10 @@ class LSoftmaxOp(mx.operator.CustomOp):
     '''LSoftmax from <Large-Margin Softmax Loss for Convolutional Neural Networks>
     '''
 
-    def __init__(self, margin, beta, scale):
+    def __init__(self, margin, beta, beta_min, scale):
         self.margin = int(margin)
         self.beta = float(beta)
+        self.beta_min = float(beta_min)
         self.scale = float(scale)
         self.c_map = []
         self.k_map = []
@@ -148,16 +149,18 @@ class LSoftmaxOp(mx.operator.CustomOp):
         self.assign(in_grad[2], req[2], mx.nd.array(w_grad))
         # dirty hack, should also work for multi devices
         self.beta *= self.scale
+        self.beta = max(self.beta, self.beta_min)
 
 
 @mx.operator.register("LSoftmax")
 class LSoftmaxProp(mx.operator.CustomOpProp):
 
-    def __init__(self, num_hidden, beta, margin, scale=1):
+    def __init__(self, num_hidden, beta, margin, scale=1, beta_min=0):
         super(LSoftmaxProp, self).__init__(need_top_grad=True)
         self.margin = int(margin)
         self.num_hidden = int(num_hidden)
         self.beta = float(beta)
+        self.beta_min = float(beta_min)
         self.scale = float(scale)
 
     def list_arguments(self):
@@ -177,7 +180,7 @@ class LSoftmaxProp(mx.operator.CustomOpProp):
         return [dshape, lshape, wshape], [oshape,], []
 
     def create_operator(self, ctx, shapes, dtypes):
-        return LSoftmaxOp(margin=self.margin, beta=self.beta, scale=self.scale)
+        return LSoftmaxOp(margin=self.margin, beta=self.beta, beta_min=self.beta_min, scale=self.scale)
 
 
 def test_op():

@@ -36,11 +36,11 @@ def get_symbol():
         if args.op_impl == 'cpp':
             fc4 = mx.sym.LSoftmax(data=embedding, label=label, num_hidden=10,
                                   beta=args.beta, margin=args.margin, scale=args.scale,
-                                  verbose=True)
+                                  beta_min=args.beta_min, verbose=True)
         else:
             fc4 = mx.sym.Custom(data=embedding, label=label, num_hidden=10,
                                 beta=args.beta, margin=args.margin, scale=args.scale,
-                                op_type='LSoftmax')
+                                beta_min=args.beta_min, op_type='LSoftmax')
     else:
         fc4 = mx.sym.FullyConnected(data=embedding, num_hidden=10, no_bias=True)
     softmax_loss = mx.sym.SoftmaxOutput(data=fc4, label=label)
@@ -191,6 +191,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', type=int, default=-1, help="gpu device")
     parser.add_argument('--lr', type=float, default=0.01, help="learning rate")
     parser.add_argument('--beta', type=float, default=1, help="beta in lsoftmax, same as lambda")
+    parser.add_argument('--beta-min', type=float, default=0, help="minimun beta")
     parser.add_argument('--scale', type=float, default=1, help="beta scale for every mini-batch")
     parser.add_argument('--embed-dim', type=int, default=2, help="embedding dimension")
     parser.add_argument('--batch-size', type=int, default=128, help="batch size")
