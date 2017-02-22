@@ -80,8 +80,10 @@ class LSoftmaxOp : public Operator {
     CHECK_EQ(out_data.size(), 3);
     CHECK_EQ(req.size(), 3);
     CHECK_EQ(req[lsoftmax_enum::kOut], kWriteTo);
-    CHECK_EQ(req[lsoftmax_enum::kDataNorm], kWriteTo);
-    CHECK_EQ(req[lsoftmax_enum::kWeightNorm], kWriteTo);
+    CHECK(req[lsoftmax_enum::kDataNorm] == kNullOp ||
+          req[lsoftmax_enum::kDataNorm] == kWriteTo);
+    CHECK(req[lsoftmax_enum::kWeightNorm] == kNullOp ||
+          req[lsoftmax_enum::kWeightNorm] == kWriteTo);
     Stream<xpu> *s = ctx.get_stream<xpu>();
     const int n = in_data[lsoftmax_enum::kData].size(0);
     const int m = in_data[lsoftmax_enum::kWeight].size(0);
