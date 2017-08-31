@@ -179,6 +179,10 @@ class LSoftmaxProp(mx.operator.CustomOpProp):
         oshape = (dshape[0], self.num_hidden)
         return [dshape, lshape, wshape], [oshape,], []
 
+    def infer_type(self, in_type):
+        return [in_type[0]]*len(in_type), [in_type[0]]*len(self.list_outputs()), \
+            [in_type[0]]*len(self.list_auxiliary_states())
+
     def create_operator(self, ctx, shapes, dtypes):
         return LSoftmaxOp(margin=self.margin, beta=self.beta, beta_min=self.beta_min, scale=self.scale)
 
